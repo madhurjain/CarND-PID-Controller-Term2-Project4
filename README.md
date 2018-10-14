@@ -13,6 +13,13 @@ will help keep the car on track. Udacity Simulator will be used to evaluate the 
 
 [![Vimeo Link][image1]](https://vimeo.com/295058303)
 
+Discussion
+---
+
+The PID parameters were tuned with the help of Twiddle and some manual adjustments.
+After several trial-and-errors, the Kp, Ki, Kd values which would give the best performance were choosen.
+The project can be further improved by applying PID not just to steering but also for the throttling.
+
 ## Dependencies
 
 * cmake >= 3.5
