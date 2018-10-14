@@ -4,6 +4,8 @@
 #include "PID.h"
 #include <math.h>
 
+bool twiddleRun = false;
+
 // for convenience
 using json = nlohmann::json;
 
@@ -34,6 +36,14 @@ int main()
 
   PID pid;
   // TODO: Initialize the pid variable.
+  if(twiddleRun)
+  {
+    pid.Init(0, 0, 0);
+  }
+  else
+  {
+    pid.Init(0.12, 0.00025, 3.0);
+  }
 
   h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -57,16 +67,121 @@ int main()
           * NOTE: Feel free to play around with the throttle and speed. Maybe use
           * another PID controller to control the speed!
           */
-          
+          pid.UpdateError(cte);
+          steer_value =  - pid.TotalError();
+
           // DEBUG
           std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;
 
           json msgJson;
           msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = 0.3;
+          msgJson["throttle"] = 0.4;
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+          
+          // For Twiddle
+          if (twiddleRun)
+          {
+            pid.newErr += pow(cte, 2);
+            pid.stepCount += 1;
+            if(fabs(cte) > 2)
+            {
+              std::string resetMsg = "42[\"reset\",{}]";
+              ws.send(resetMsg.data(), resetMsg.length(), uWS::OpCode::TEXT);
+            }
+            if(pid.stepCount >= 500)
+            {
+              // move parameters to array
+              double p[] = { pid.Kp, pid.Ki, pid.Kd };
+              double sum_dp = pid.dp[0] + pid.dp[1] + pid.dp[2];
+              std::cout << "\n=============================" << std::endl;
+              std::cout << "Iteration: " << pid.iteration << std::endl;
+              std::cout << "Tune Parameter: " << pid.tuneParameter << ", Current Value: " << p[pid.tuneParameter] << std::endl;
+              switch(pid.nextState)
+              {
+                  case pid.FIRSTRUN:
+                    pid.bestErr = pid.newErr;
+                    std::cout << "First Run:: Best Err: " << pid.bestErr << ", CTE: " << cte << std::endl;
+                    p[pid.tuneParameter] += pid.dp[pid.tuneParameter];
+                    std::cout << "Parameter #" << pid.tuneParameter << " incremented by " << pid.dp[pid.tuneParameter]
+                              << ", new value: " << p[pid.tuneParameter] << std::endl;
+                    pid.nextState = pid.BASELINE;
+                    break;
+                  case pid.BASELINE:
+                    std::cout << "Twiddle Run Baseline:: Best Err: " << pid.bestErr << ", New Err: " << pid.newErr << ", CTE: " << cte << std::endl;
+                    // if we already meet the tolerance required, then we are done
+                    if(fabs(sum_dp) > pid.tolerance)
+                    {
+              
+                      if (pid.newErr < pid.bestErr)
+                      {
+                        pid.bestErr = pid.newErr;
+                        pid.dp[pid.tuneParameter] *= 1.1;
+                        std::cout << "New Err < Best Err for Parameter " << pid.tuneParameter << std::endl;
+                        std::cout << "Best Err Updated. Moving to next parameter.." << std::endl;
+                        // move to the next parameter and establish a baseline
+                        pid.tuneParameter = (pid.tuneParameter + 1) % 3;
+                        p[pid.tuneParameter] += pid.dp[pid.tuneParameter];
+                        std::cout << "Parameter #" << pid.tuneParameter << " incremented by " << pid.dp[pid.tuneParameter]
+                                  << ", new value: " << p[pid.tuneParameter] << std::endl;
+                        pid.nextState = pid.BASELINE;
+                      }
+                      else
+                      {
+                        // reset p[i] to previous value and rerun for same parameter
+                        p[pid.tuneParameter] -= pid.dp[pid.tuneParameter] * 2;
+                        pid.nextState = pid.CORRECTION;
+                      }
+                    }
+                    else
+                    {
+                      pid.nextState = pid.DONE;
+                    }
+                    break;
+                  case pid.CORRECTION:
+                    std::cout << "Twiddle Run Correction:: Best Err: " << pid.bestErr << ", New Err: " << pid.newErr << ", CTE: " << cte << std::endl;
+                    if (pid.newErr < pid.bestErr)
+                    {
+                      pid.bestErr = pid.newErr;
+                      pid.dp[pid.tuneParameter] *= 1.1;
+                      std::cout << "New Err < Best Err for Parameter " << pid.tuneParameter << std::endl;
+                      std::cout << "Best Err Updated" << std::endl;
+                    }
+                    else
+                    {
+                      p[pid.tuneParameter] += pid.dp[pid.tuneParameter];
+                      std::cout << "Parameter #" << pid.tuneParameter << " incremented by " << pid.dp[pid.tuneParameter]
+                                << ", new value: " << p[pid.tuneParameter] << std::endl;
+                      pid.dp[pid.tuneParameter] *= 0.9;
+                    }
+                    // move to the next parameter and establish a baseline
+                    pid.tuneParameter = (pid.tuneParameter + 1) % 3;
+                    p[pid.tuneParameter] += pid.dp[pid.tuneParameter];
+                    std::cout << "Parameter #" << pid.tuneParameter << " incremented by " << pid.dp[pid.tuneParameter]
+                              << ", new value: " << p[pid.tuneParameter] << std::endl;
+                    pid.nextState = pid.BASELINE;
+                    break;
+                  case pid.DONE:
+                    twiddleRun = false;
+                    std::cout << "Done Twiddle Run" << std::endl;
+                    std::cout << "Kp: " << pid.Kp << ", Ki: " << pid.Ki << ", Kd: " << pid.Kd << std::endl;
+                    break;
+              } // switch(pid.nextState)
+              pid.iteration += 1;
+              // reset step count
+              pid.stepCount = 0;
+              // move back the array to parameters
+              pid.Kp = p[0];
+              pid.Ki = p[1];
+              pid.Kd = p[2];
+              std::cout << "Kp: " << pid.Kp << ", Ki: " << pid.Ki << ", Kd: " << pid.Kd << std::endl;
+              
+              pid.newErr = 0.0;
+              std::string resetMsg = "42[\"reset\",{}]";
+              ws.send(resetMsg.data(), resetMsg.length(), uWS::OpCode::TEXT);
+            } // if pid.stepCount >= 500
+          } // if twiddleRun
         }
       } else {
         // Manual driving

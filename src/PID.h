@@ -18,6 +18,21 @@ public:
   double Kd;
 
   /*
+  * Added for Twiddle
+  */
+  enum State { FIRSTRUN, BASELINE, CORRECTION, DONE };
+  State nextState;
+  bool resetCar;
+  int tuneParameter;
+  double dp[3];
+  double tolerance;
+  unsigned int iteration;
+  unsigned int stepCount;
+  double newErr;
+  double bestErr;
+  bool moveToNextParamTuning;
+
+  /*
   * Constructor
   */
   PID();
