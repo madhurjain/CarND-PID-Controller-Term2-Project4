@@ -1,7 +1,17 @@
-# CarND-Controls-PID
-Self-Driving Car Engineer Nanodegree Program
+## PID Controller Project
+[![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
+
+Overview
+---
+The purpose of this project is to build a PID controller which will control the steering of the car.
+Input to this PID controller will be the Cross-Track Error (CTE), based on the CTE value, we will update the PID parameters (Kp, Ki, Kd) which 
+will help keep the car on track. Udacity Simulator will be used to evaluate the working of this PID Controller.
+
+[image1]: ./vimeo_link.png "Link to Vimeo"
 
 ---
+
+[![Vimeo Link][image1]](https://vimeo.com/295058303)
 
 ## Dependencies
 
